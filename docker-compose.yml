@@ -1,0 +1,87 @@
+services:
+  # --- 1. Armazenamento de Objetos (Simula AWS S3) ---
+  minio:
+    image: minio/minio
+    container_name: minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+
+  # --- 2. Banco de Dados Estruturado (PostgreSQL) ---
+  postgres:
+    image: postgres:13
+    container_name: postgres_db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: weather_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # --- 3. Ingestão de Dados (API) ---
+  fastapi:
+    build:
+      context: .                    # <--- MUDANÇA IMPORTANTE AQUI
+      dockerfile: fastapi/Dockerfile # <--- E AQUI
+    container_name: fastapi_app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - minio
+      - postgres
+    environment:
+      - DB_HOST=postgres
+      - DB_NAME=weather_db
+      - DB_USER=admin
+      - DB_PASS=admin
+      - S3_ENDPOINT=minio:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
+
+  # --- 4. Análise e ML (Jupyter) ---
+  jupyter:
+    build: ./jupyterlab
+    container_name: jupyter_lab
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./notebooks:/home/jovyan/work
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+    depends_on:
+      - postgres
+      - mlflow
+
+  # --- 5. Registro de Experimentos (MLFlow) ---
+  mlflow:
+    image: ghcr.io/mlflow/mlflow
+    container_name: mlflow_server
+    ports:
+      - "5000:5000"
+    command: mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root ./mlruns --host 0.0.0.0
+
+  # --- 6. Dashboard (ThingsBoard) ---
+  thingsboard:
+    image: thingsboard/tb-postgres
+    container_name: thingsboard
+    ports:
+      - "8080:9090"
+    environment:
+      - TB_QUEUE_TYPE=in-memory
+    volumes:
+      - tb_data:/data
+      - tb_log:/var/log/thingsboard
+
+volumes:
+  minio_data:
+  postgres_data:
+  tb_data:
+  tb_log:
