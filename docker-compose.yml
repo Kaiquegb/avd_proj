@@ -1,5 +1,6 @@
+version: '3.8'
 services:
-  # --- 1. Armazenamento de Objetos (Simula AWS S3) ---
+  # 1. Armazenamento (S3)
   minio:
     image: minio/minio
     container_name: minio
@@ -13,9 +14,11 @@ services:
     volumes:
       - minio_data:/data
 
-  # --- 2. Banco de Dados Estruturado (PostgreSQL) ---
+  # 2. Banco de Dados (Customizado com SQL)
   postgres:
-    image: postgres:13
+    build:
+      context: ./sql_scripts  # Aponta para sua pasta de scripts
+      dockerfile: Dockerfile
     container_name: postgres_db
     ports:
       - "5432:5432"
@@ -26,11 +29,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  # --- 3. Ingestão de Dados (API) ---
+  # 3. Ingestão (API)
   fastapi:
     build:
-      context: .                    # <--- MUDANÇA IMPORTANTE AQUI
-      dockerfile: fastapi/Dockerfile # <--- E AQUI
+      context: .
+      dockerfile: fastapi/Dockerfile
     container_name: fastapi_app
     ports:
       - "8000:8000"
@@ -46,7 +49,7 @@ services:
       - S3_ACCESS_KEY=minioadmin
       - S3_SECRET_KEY=minioadmin
 
-  # --- 4. Análise e ML (Jupyter) ---
+  # 4. Análise (Jupyter)
   jupyter:
     build: ./jupyterlab
     container_name: jupyter_lab
@@ -60,7 +63,7 @@ services:
       - postgres
       - mlflow
 
-  # --- 5. Registro de Experimentos (MLFlow) ---
+  # 5. Registro de Modelos (MLFlow)
   mlflow:
     image: ghcr.io/mlflow/mlflow
     container_name: mlflow_server
@@ -68,20 +71,28 @@ services:
       - "5000:5000"
     command: mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root ./mlruns --host 0.0.0.0
 
-  # --- 6. Dashboard (ThingsBoard) ---
+  # 6. Dashboard (ThingsBoard) - Porta 80 para evitar erros
   thingsboard:
     image: thingsboard/tb-postgres
     container_name: thingsboard
+    restart: always
     ports:
-      - "8080:9090"
+      -  "8090:9090"
     environment:
       - TB_QUEUE_TYPE=in-memory
     volumes:
       - tb_data:/data
       - tb_log:/var/log/thingsboard
+    networks:
+      - app_network
+
 
 volumes:
   minio_data:
   postgres_data:
   tb_data:
   tb_log:
+
+networks:
+  app_network:
+    driver: bridge
